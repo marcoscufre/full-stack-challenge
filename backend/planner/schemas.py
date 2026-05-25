@@ -11,6 +11,10 @@ class ErrorCode(StrEnum):
     INVALID_JSON = "invalid_json"
     VALIDATION_ERROR = "validation_error"
     METHOD_NOT_ALLOWED = "method_not_allowed"
+    PLANNER_EXECUTION_ERROR = "planner_execution_error"
+    INVALID_CYCLE_USAGE = "invalid_cycle_usage"
+    IMPOSSIBLE_TRIP = "impossible_trip"
+    MOCK_ROUTE_ERROR = "mock_route_error"
 
 
 class TripPlanRequest(BaseModel):

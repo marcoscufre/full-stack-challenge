@@ -8,6 +8,7 @@ from .domain import (
     PlannedActivity,
     RouteLeg,
 )
+from .errors import ImpossibleTripError
 
 
 def build_default_activities(
@@ -84,6 +85,13 @@ def simulate_hos_timeline(
     shift_driving_minutes = 0
     driving_since_break_minutes = 0
     cycle_used_minutes = int(round(current_cycle_used_hours * 60))
+
+    if cycle_used_minutes >= (HOS_RULES.cycle_limit_hours * 60):
+        raise ImpossibleTripError(
+            f"The driver has already used {current_cycle_used_hours} hours of their "
+            f"{HOS_RULES.cycle_limit_hours}-hour cycle and cannot start a new trip "
+            "without a 34-hour restart."
+        )
 
     for activity in activities:
         remaining_minutes = activity.duration_minutes
@@ -174,8 +182,10 @@ def simulate_hos_timeline(
                 next_chunk = remaining_minutes
 
             if next_chunk <= 0:
-                raise RuntimeError(
-                    "Unable to allocate an HOS-compliant time chunk for the planned activity."
+                raise ImpossibleTripError(
+                    "Unable to allocate an HOS-compliant time chunk for the planned activity. "
+                    "This usually happens when the duty window or cycle is fully exhausted "
+                    "and no reset is possible within the simulation."
                 )
 
             current_at = _append_segment(

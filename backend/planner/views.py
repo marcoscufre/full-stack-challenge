@@ -5,8 +5,11 @@ from django.views.decorators.csrf import csrf_exempt
 from pydantic import ValidationError
 
 from .errors import (
+    PlannerError,
+    build_internal_error,
     build_invalid_json_error,
     build_method_not_allowed_error,
+    build_planner_error,
     build_validation_error,
 )
 from .schemas import TripPlanRequest
@@ -35,5 +38,13 @@ def trip_plan(request: HttpRequest) -> JsonResponse:
         error = build_validation_error(exc)
         return JsonResponse(error.model_dump(mode="json"), status=400)
 
-    response = build_trip_plan(payload)
+    try:
+        response = build_trip_plan(payload)
+    except PlannerError as exc:
+        error = build_planner_error(exc)
+        return JsonResponse(error.model_dump(mode="json"), status=422)
+    except Exception:
+        error = build_internal_error()
+        return JsonResponse(error.model_dump(mode="json"), status=500)
+
     return JsonResponse(response.model_dump(mode="json"), status=200)
