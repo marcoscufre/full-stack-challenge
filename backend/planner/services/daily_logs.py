@@ -2,6 +2,7 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 
 from ..domain import DailyLogData, DailyRecapData, DutySegment, EventType
+from .log_grid import build_log_grid
 
 
 def build_daily_logs(
@@ -30,6 +31,7 @@ def build_daily_logs(
                 remarks=remarks or [],
                 recap=recap,
                 segments=day_segments,
+                grid=build_log_grid(day_segments),
             )
         )
 

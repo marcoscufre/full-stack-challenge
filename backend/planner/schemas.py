@@ -83,6 +83,41 @@ class DailyLogRecap(BaseModel):
     on_duty_not_driving_hours: float = Field(ge=0)
 
 
+class DailyLogGridInterval(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: EventType
+    row_index: int = Field(ge=0, le=3)
+    start_minute: int = Field(ge=0, le=1440)
+    end_minute: int = Field(ge=0, le=1440)
+    start_hour: float = Field(ge=0, le=24)
+    end_hour: float = Field(ge=0, le=24)
+    x_start: float = Field(ge=0, le=1)
+    x_end: float = Field(ge=0, le=1)
+    duration_minutes: int = Field(ge=0)
+    label: str = Field(min_length=1, max_length=120)
+
+
+class DailyLogGridTransition(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    minute: int = Field(ge=0, le=1440)
+    hour: float = Field(ge=0, le=24)
+    from_status: EventType
+    to_status: EventType
+    x_position: float = Field(ge=0, le=1)
+
+
+class DailyLogGrid(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intervals: list[DailyLogGridInterval]
+    transitions: list[DailyLogGridTransition]
+    total_minutes: int = Field(ge=0, le=1440)
+    grid_start_hour: int = Field(ge=0, le=24)
+    grid_end_hour: int = Field(ge=0, le=24)
+
+
 class DailyLogSheet(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -91,6 +126,7 @@ class DailyLogSheet(BaseModel):
     remarks: list[str]
     recap: DailyLogRecap
     segments: list[DailyLogSegment]
+    grid: DailyLogGrid
 
 
 class TripPlanResponse(BaseModel):

@@ -14,6 +14,9 @@ from ..domain import (
 from ..hos_engine import build_default_activities, simulate_hos_timeline
 from ..mock_routes import resolve_mock_route_legs
 from ..schemas import (
+    DailyLogGrid,
+    DailyLogGridInterval,
+    DailyLogGridTransition,
     DailyLogSheet,
     DailyLogRecap,
     DailyLogSegment,
@@ -197,9 +200,39 @@ def to_trip_plan_response(
                         start_at=segment.start_at,
                         end_at=segment.end_at,
                         duration_minutes=segment.duration_minutes,
-                    )
+                        )
                     for segment in log.segments
                 ],
+                grid=DailyLogGrid(
+                    intervals=[
+                        DailyLogGridInterval(
+                            status=interval.status,
+                            row_index=interval.row_index,
+                            start_minute=interval.start_minute,
+                            end_minute=interval.end_minute,
+                            start_hour=interval.start_hour,
+                            end_hour=interval.end_hour,
+                            x_start=interval.x_start,
+                            x_end=interval.x_end,
+                            duration_minutes=interval.duration_minutes,
+                            label=interval.label,
+                        )
+                        for interval in (log.grid.intervals if log.grid else [])
+                    ],
+                    transitions=[
+                        DailyLogGridTransition(
+                            minute=transition.minute,
+                            hour=transition.hour,
+                            from_status=transition.from_status,
+                            to_status=transition.to_status,
+                            x_position=transition.x_position,
+                        )
+                        for transition in (log.grid.transitions if log.grid else [])
+                    ],
+                    total_minutes=log.grid.total_minutes if log.grid else 0,
+                    grid_start_hour=log.grid.grid_start_hour if log.grid else 0,
+                    grid_end_hour=log.grid.grid_end_hour if log.grid else 24,
+                ),
             )
             for log in trip_data.daily_logs
         ],

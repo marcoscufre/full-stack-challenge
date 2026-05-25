@@ -105,12 +105,45 @@ class DailyRecapData:
 
 
 @dataclass(slots=True, frozen=True)
+class LogGridInterval:
+    status: EventType
+    row_index: int
+    start_minute: int
+    end_minute: int
+    start_hour: float
+    end_hour: float
+    x_start: float
+    x_end: float
+    duration_minutes: int
+    label: str
+
+
+@dataclass(slots=True, frozen=True)
+class LogGridTransition:
+    minute: int
+    hour: float
+    from_status: EventType
+    to_status: EventType
+    x_position: float
+
+
+@dataclass(slots=True, frozen=True)
+class DailyLogGridData:
+    intervals: list[LogGridInterval]
+    transitions: list[LogGridTransition]
+    total_minutes: int
+    grid_start_hour: int = 0
+    grid_end_hour: int = 24
+
+
+@dataclass(slots=True, frozen=True)
 class DailyLogData:
     day_index: int
     service_date: date
     remarks: list[str]
     recap: DailyRecapData
     segments: list[DutySegment]
+    grid: DailyLogGridData | None = None
 
 
 @dataclass(slots=True, frozen=True)
