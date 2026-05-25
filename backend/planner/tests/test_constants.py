@@ -8,6 +8,7 @@ def test_hos_rules_match_challenge_assumptions():
     assert HOS_RULES.max_on_duty_window_hours == 14
     assert HOS_RULES.break_required_before_driving_hours == 8
     assert HOS_RULES.break_duration_minutes == 30
+    assert HOS_RULES.mandatory_off_duty_reset_hours == 10
     assert HOS_RULES.restart_reset_hours == 34
 
 

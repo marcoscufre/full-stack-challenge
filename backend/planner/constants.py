@@ -9,6 +9,7 @@ class HosRules:
     max_on_duty_window_hours: int = 14
     break_required_before_driving_hours: int = 8
     break_duration_minutes: int = 30
+    mandatory_off_duty_reset_hours: int = 10
     restart_reset_hours: int = 34
 
 

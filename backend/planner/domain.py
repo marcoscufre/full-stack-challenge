@@ -70,6 +70,17 @@ class DutySegment:
 
 
 @dataclass(slots=True, frozen=True)
+class PlannedActivity:
+    status: EventType
+    label: str
+    location: str
+    duration_minutes: int
+    distance_miles: float = 0.0
+    source_leg_name: str | None = None
+    notes: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
 class FuelStopPlan:
     location: str
     trigger_mile_marker: float
@@ -114,3 +125,9 @@ class TripPlanData:
     warnings: list[str] = field(default_factory=list)
     fuel_stops: list[FuelStopPlan] = field(default_factory=list)
     rest_breaks: list[RestBreakPlan] = field(default_factory=list)
+
+
+@dataclass(slots=True, frozen=True)
+class HosPlanResult:
+    timeline: list[DutySegment]
+    warnings: list[str] = field(default_factory=list)

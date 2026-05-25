@@ -1,10 +1,9 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
-from .constants import OPERATIONAL_DEFAULTS, PLANNER_ASSUMPTIONS
+from .constants import PLANNER_ASSUMPTIONS
 from .domain import (
     DailyLogData,
     DailyRecapData,
-    DutySegment,
     EventType,
     MockRouteOverrides,
     PlannedStop,
@@ -12,6 +11,7 @@ from .domain import (
     StopType,
     TripPlanData,
 )
+from .hos_engine import build_default_activities, simulate_hos_timeline
 from .mock_routes import resolve_mock_route_legs
 from .schemas import (
     DailyLogSheet,
@@ -36,22 +36,41 @@ def build_trip_plan_data(
 ) -> TripPlanData:
     start_at = payload.trip_start_at or datetime.now(UTC).replace(microsecond=0)
     route_legs = resolve_mock_route_legs(payload, overrides=route_overrides)
+    activities = build_default_activities(
+        route_legs,
+        pickup_location=payload.pickup_location,
+        dropoff_location=payload.dropoff_location,
+    )
+    hos_plan = simulate_hos_timeline(
+        start_at=start_at,
+        current_cycle_used_hours=payload.current_cycle_used_hours,
+        activities=activities,
+    )
+    timeline = hos_plan.timeline
 
-    current_to_pickup_leg = route_legs[0]
-    pickup_to_dropoff_leg = route_legs[1]
+    total_driving_hours = sum(
+        segment.duration_minutes
+        for segment in timeline
+        if segment.status == EventType.DRIVING
+    ) / 60
+    total_on_duty_not_driving_hours = sum(
+        segment.duration_minutes
+        for segment in timeline
+        if segment.status == EventType.ON_DUTY
+    ) / 60
+    total_rest_hours = sum(
+        segment.duration_minutes
+        for segment in timeline
+        if segment.status in {EventType.OFF_DUTY, EventType.SLEEPER}
+    ) / 60
 
-    current_to_pickup_end = start_at + timedelta(
-        minutes=current_to_pickup_leg.duration_minutes
-    )
-    pickup_end = current_to_pickup_end + timedelta(
-        minutes=OPERATIONAL_DEFAULTS.pickup_duration_minutes
-    )
-    pickup_to_dropoff_end = pickup_end + timedelta(
-        minutes=pickup_to_dropoff_leg.duration_minutes
-    )
-    dropoff_end = pickup_to_dropoff_end + timedelta(
-        minutes=OPERATIONAL_DEFAULTS.dropoff_duration_minutes
-    )
+    service_dates = {
+        segment.start_at.date().isoformat()
+        for segment in timeline
+    } | {
+        segment.end_at.date().isoformat()
+        for segment in timeline
+    }
 
     route_stops = [
         PlannedStop(
@@ -74,61 +93,13 @@ def build_trip_plan_data(
         ),
     ]
 
-    timeline = [
-        DutySegment(
-            status=EventType.DRIVING,
-            label="Drive to pickup",
-            start_at=start_at,
-            end_at=current_to_pickup_end,
-            duration_minutes=current_to_pickup_leg.duration_minutes,
-            location=f"{payload.current_location} -> {payload.pickup_location}",
-            notes="Mock route leg generated without external routing APIs.",
-        ),
-        DutySegment(
-            status=EventType.ON_DUTY,
-            label="Pickup handling",
-            start_at=current_to_pickup_end,
-            end_at=pickup_end,
-            duration_minutes=OPERATIONAL_DEFAULTS.pickup_duration_minutes,
-            location=payload.pickup_location,
-            notes="Initial placeholder event while route and HOS engine are under construction.",
-        ),
-        DutySegment(
-            status=EventType.DRIVING,
-            label="Drive toward destination",
-            start_at=pickup_end,
-            end_at=pickup_to_dropoff_end,
-            duration_minutes=pickup_to_dropoff_leg.duration_minutes,
-            location=f"{payload.pickup_location} -> {payload.dropoff_location}",
-            notes="Mock route leg generated without external routing APIs.",
-        ),
-        DutySegment(
-            status=EventType.ON_DUTY,
-            label="Dropoff handling",
-            start_at=pickup_to_dropoff_end,
-            end_at=dropoff_end,
-            duration_minutes=OPERATIONAL_DEFAULTS.dropoff_duration_minutes,
-            location=payload.dropoff_location,
-            notes="Placeholder dropoff block.",
-        ),
-    ]
-
     summary = RouteSummaryData(
         total_distance_miles=sum(leg.distance_miles for leg in route_legs),
         total_duration_hours=sum(segment.duration_minutes for segment in timeline) / 60,
-        total_driving_hours=sum(
-            segment.duration_minutes
-            for segment in timeline
-            if segment.status == EventType.DRIVING
-        )
-        / 60,
-        total_on_duty_hours=(
-            OPERATIONAL_DEFAULTS.pickup_duration_minutes
-            + OPERATIONAL_DEFAULTS.dropoff_duration_minutes
-        )
-        / 60,
-        total_rest_hours=0.0,
-        estimated_days=1,
+        total_driving_hours=total_driving_hours,
+        total_on_duty_hours=total_on_duty_not_driving_hours,
+        total_rest_hours=total_rest_hours,
+        estimated_days=max(1, len(service_dates)),
     )
 
     daily_logs = [
@@ -141,19 +112,10 @@ def build_trip_plan_data(
                 f"Dropoff: {payload.dropoff_location}",
             ],
             recap=DailyRecapData(
-                off_duty_hours=0.0,
+                off_duty_hours=total_rest_hours,
                 sleeper_hours=0.0,
-                driving_hours=sum(
-                    segment.duration_minutes
-                    for segment in timeline
-                    if segment.status == EventType.DRIVING
-                )
-                / 60,
-                on_duty_not_driving_hours=(
-                    OPERATIONAL_DEFAULTS.pickup_duration_minutes
-                    + OPERATIONAL_DEFAULTS.dropoff_duration_minutes
-                )
-                / 60,
+                driving_hours=total_driving_hours,
+                on_duty_not_driving_hours=total_on_duty_not_driving_hours,
             ),
             segments=timeline,
         )
@@ -162,6 +124,7 @@ def build_trip_plan_data(
     warnings = [
         "This is a scaffold response. Real geocoding, routing, fuel planning, and HOS compliance are the next implementation steps.",
         "For production-grade ELD output, the frontend should provide trip_start_at explicitly.",
+        *hos_plan.warnings,
     ]
 
     return TripPlanData(
