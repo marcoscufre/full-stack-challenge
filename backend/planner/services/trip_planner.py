@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
-from .constants import PLANNER_ASSUMPTIONS
-from .domain import (
+from ..constants import PLANNER_ASSUMPTIONS
+from ..domain import (
     DailyLogData,
     DailyRecapData,
     EventType,
@@ -11,9 +11,9 @@ from .domain import (
     StopType,
     TripPlanData,
 )
-from .hos_engine import build_default_activities, simulate_hos_timeline
-from .mock_routes import resolve_mock_route_legs
-from .schemas import (
+from ..hos_engine import build_default_activities, simulate_hos_timeline
+from ..mock_routes import resolve_mock_route_legs
+from ..schemas import (
     DailyLogSheet,
     DailyLogRecap,
     DailyLogSegment,
@@ -23,6 +23,7 @@ from .schemas import (
     TripPlanResponse,
     TripSummary,
 )
+from .fuel_planner import insert_fuel_stops
 
 
 def build_trip_plan(payload: TripPlanRequest) -> TripPlanResponse:
@@ -36,15 +37,16 @@ def build_trip_plan_data(
 ) -> TripPlanData:
     start_at = payload.trip_start_at or datetime.now(UTC).replace(microsecond=0)
     route_legs = resolve_mock_route_legs(payload, overrides=route_overrides)
-    activities = build_default_activities(
+    base_activities = build_default_activities(
         route_legs,
         pickup_location=payload.pickup_location,
         dropoff_location=payload.dropoff_location,
     )
+    fuel_plan = insert_fuel_stops(base_activities)
     hos_plan = simulate_hos_timeline(
         start_at=start_at,
         current_cycle_used_hours=payload.current_cycle_used_hours,
-        activities=activities,
+        activities=fuel_plan.activities,
     )
     timeline = hos_plan.timeline
 
@@ -85,11 +87,20 @@ def build_trip_plan_data(
             location=payload.pickup_location,
             sequence=2,
         ),
+        *[
+            PlannedStop(
+                type=StopType.FUEL,
+                label=f"Fuel stop {index}",
+                location=stop.location,
+                sequence=index + 2,
+            )
+            for index, stop in enumerate(fuel_plan.fuel_stops, start=1)
+        ],
         PlannedStop(
             type=StopType.DROPOFF,
             label="Dropoff location",
             location=payload.dropoff_location,
-            sequence=3,
+            sequence=3 + len(fuel_plan.fuel_stops),
         ),
     ]
 
@@ -136,6 +147,7 @@ def build_trip_plan_data(
         daily_logs=daily_logs,
         summary=summary,
         warnings=warnings,
+        fuel_stops=fuel_plan.fuel_stops,
     )
 
 
