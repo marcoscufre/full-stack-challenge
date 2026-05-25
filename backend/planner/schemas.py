@@ -1,23 +1,10 @@
 from datetime import datetime
-from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .domain import EventType, StopType
 
-class EventType(StrEnum):
-    OFF_DUTY = "off_duty"
-    SLEEPER = "sleeper"
-    DRIVING = "driving"
-    ON_DUTY = "on_duty"
-
-
-class StopType(StrEnum):
-    ORIGIN = "origin"
-    PICKUP = "pickup"
-    DROPOFF = "dropoff"
-    BREAK = "break"
-    FUEL = "fuel"
-    REST = "rest"
+from enum import StrEnum
 
 
 class ErrorCode(StrEnum):
