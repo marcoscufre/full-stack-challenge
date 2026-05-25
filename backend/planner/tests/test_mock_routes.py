@@ -78,4 +78,4 @@ def test_trip_planner_runs_end_to_end_with_mock_route_overrides():
     assert trip_data.timeline[0].label == "Drive to pickup"
     assert trip_data.timeline[0].duration_minutes == 210
     assert trip_data.timeline[2].duration_minutes == 195
-    assert trip_data.daily_logs[0].recap.driving_hours == 6.75
+    assert sum(log.recap.driving_hours for log in trip_data.daily_logs) == 6.75

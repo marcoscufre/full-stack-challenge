@@ -24,6 +24,8 @@ from ..schemas import (
     TripSummary,
 )
 from .fuel_planner import insert_fuel_stops
+from .daily_logs import build_daily_logs
+from .timeline import calculate_total_timeline_minutes, normalize_timeline
 
 
 def build_trip_plan(payload: TripPlanRequest) -> TripPlanResponse:
@@ -35,7 +37,8 @@ def build_trip_plan_data(
     payload: TripPlanRequest,
     route_overrides: MockRouteOverrides | None = None,
 ) -> TripPlanData:
-    start_at = payload.trip_start_at or datetime.now(UTC).replace(microsecond=0)
+    start_at = payload.trip_start_at or datetime.now(UTC)
+    start_at = start_at.replace(second=0, microsecond=0)
     route_legs = resolve_mock_route_legs(payload, overrides=route_overrides)
     base_activities = build_default_activities(
         route_legs,
@@ -48,7 +51,7 @@ def build_trip_plan_data(
         current_cycle_used_hours=payload.current_cycle_used_hours,
         activities=fuel_plan.activities,
     )
-    timeline = hos_plan.timeline
+    timeline = normalize_timeline(hos_plan.timeline)
 
     total_driving_hours = sum(
         segment.duration_minutes
@@ -106,31 +109,21 @@ def build_trip_plan_data(
 
     summary = RouteSummaryData(
         total_distance_miles=sum(leg.distance_miles for leg in route_legs),
-        total_duration_hours=sum(segment.duration_minutes for segment in timeline) / 60,
+        total_duration_hours=calculate_total_timeline_minutes(timeline) / 60,
         total_driving_hours=total_driving_hours,
         total_on_duty_hours=total_on_duty_not_driving_hours,
         total_rest_hours=total_rest_hours,
         estimated_days=max(1, len(service_dates)),
     )
 
-    daily_logs = [
-        DailyLogData(
-            day_index=1,
-            service_date=start_at.date(),
-            remarks=[
-                f"Start: {payload.current_location}",
-                f"Pickup: {payload.pickup_location}",
-                f"Dropoff: {payload.dropoff_location}",
-            ],
-            recap=DailyRecapData(
-                off_duty_hours=total_rest_hours,
-                sleeper_hours=0.0,
-                driving_hours=total_driving_hours,
-                on_duty_not_driving_hours=total_on_duty_not_driving_hours,
-            ),
-            segments=timeline,
-        )
-    ]
+    daily_logs = build_daily_logs(
+        timeline,
+        remarks=[
+            f"Start: {payload.current_location}",
+            f"Pickup: {payload.pickup_location}",
+            f"Dropoff: {payload.dropoff_location}",
+        ],
+    )
 
     warnings = [
         "This is a scaffold response. Real geocoding, routing, fuel planning, and HOS compliance are the next implementation steps.",
