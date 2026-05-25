@@ -6,12 +6,13 @@ from .domain import (
     DailyRecapData,
     DutySegment,
     EventType,
+    MockRouteOverrides,
     PlannedStop,
-    RouteLeg,
     RouteSummaryData,
     StopType,
     TripPlanData,
 )
+from .mock_routes import resolve_mock_route_legs
 from .schemas import (
     DailyLogSheet,
     DailyLogRecap,
@@ -29,27 +30,28 @@ def build_trip_plan(payload: TripPlanRequest) -> TripPlanResponse:
     return to_trip_plan_response(payload, trip_data)
 
 
-def build_trip_plan_data(payload: TripPlanRequest) -> TripPlanData:
+def build_trip_plan_data(
+    payload: TripPlanRequest,
+    route_overrides: MockRouteOverrides | None = None,
+) -> TripPlanData:
     start_at = payload.trip_start_at or datetime.now(UTC).replace(microsecond=0)
-    pickup_end = start_at + timedelta(
+    route_legs = resolve_mock_route_legs(payload, overrides=route_overrides)
+
+    current_to_pickup_leg = route_legs[0]
+    pickup_to_dropoff_leg = route_legs[1]
+
+    current_to_pickup_end = start_at + timedelta(
+        minutes=current_to_pickup_leg.duration_minutes
+    )
+    pickup_end = current_to_pickup_end + timedelta(
         minutes=OPERATIONAL_DEFAULTS.pickup_duration_minutes
     )
-    drive_end = pickup_end + timedelta(
-        hours=OPERATIONAL_DEFAULTS.default_mock_driving_duration_hours
+    pickup_to_dropoff_end = pickup_end + timedelta(
+        minutes=pickup_to_dropoff_leg.duration_minutes
     )
-    dropoff_end = drive_end + timedelta(
+    dropoff_end = pickup_to_dropoff_end + timedelta(
         minutes=OPERATIONAL_DEFAULTS.dropoff_duration_minutes
     )
-
-    route_legs = [
-        RouteLeg(
-            name="pickup_to_dropoff",
-            origin_label=payload.pickup_location,
-            destination_label=payload.dropoff_location,
-            distance_miles=OPERATIONAL_DEFAULTS.default_mock_route_distance_miles,
-            duration_minutes=OPERATIONAL_DEFAULTS.default_mock_driving_duration_hours * 60,
-        )
-    ]
 
     route_stops = [
         PlannedStop(
@@ -74,9 +76,18 @@ def build_trip_plan_data(payload: TripPlanRequest) -> TripPlanData:
 
     timeline = [
         DutySegment(
+            status=EventType.DRIVING,
+            label="Drive to pickup",
+            start_at=start_at,
+            end_at=current_to_pickup_end,
+            duration_minutes=current_to_pickup_leg.duration_minutes,
+            location=f"{payload.current_location} -> {payload.pickup_location}",
+            notes="Mock route leg generated without external routing APIs.",
+        ),
+        DutySegment(
             status=EventType.ON_DUTY,
             label="Pickup handling",
-            start_at=start_at,
+            start_at=current_to_pickup_end,
             end_at=pickup_end,
             duration_minutes=OPERATIONAL_DEFAULTS.pickup_duration_minutes,
             location=payload.pickup_location,
@@ -86,15 +97,15 @@ def build_trip_plan_data(payload: TripPlanRequest) -> TripPlanData:
             status=EventType.DRIVING,
             label="Drive toward destination",
             start_at=pickup_end,
-            end_at=drive_end,
-            duration_minutes=OPERATIONAL_DEFAULTS.default_mock_driving_duration_hours * 60,
+            end_at=pickup_to_dropoff_end,
+            duration_minutes=pickup_to_dropoff_leg.duration_minutes,
             location=f"{payload.pickup_location} -> {payload.dropoff_location}",
-            notes="Placeholder driving block.",
+            notes="Mock route leg generated without external routing APIs.",
         ),
         DutySegment(
             status=EventType.ON_DUTY,
             label="Dropoff handling",
-            start_at=drive_end,
+            start_at=pickup_to_dropoff_end,
             end_at=dropoff_end,
             duration_minutes=OPERATIONAL_DEFAULTS.dropoff_duration_minutes,
             location=payload.dropoff_location,
@@ -103,14 +114,14 @@ def build_trip_plan_data(payload: TripPlanRequest) -> TripPlanData:
     ]
 
     summary = RouteSummaryData(
-        total_distance_miles=OPERATIONAL_DEFAULTS.default_mock_route_distance_miles,
-        total_duration_hours=(
-            OPERATIONAL_DEFAULTS.pickup_duration_minutes
-            + OPERATIONAL_DEFAULTS.dropoff_duration_minutes
+        total_distance_miles=sum(leg.distance_miles for leg in route_legs),
+        total_duration_hours=sum(segment.duration_minutes for segment in timeline) / 60,
+        total_driving_hours=sum(
+            segment.duration_minutes
+            for segment in timeline
+            if segment.status == EventType.DRIVING
         )
-        / 60
-        + OPERATIONAL_DEFAULTS.default_mock_driving_duration_hours,
-        total_driving_hours=OPERATIONAL_DEFAULTS.default_mock_driving_duration_hours,
+        / 60,
         total_on_duty_hours=(
             OPERATIONAL_DEFAULTS.pickup_duration_minutes
             + OPERATIONAL_DEFAULTS.dropoff_duration_minutes
@@ -132,39 +143,19 @@ def build_trip_plan_data(payload: TripPlanRequest) -> TripPlanData:
             recap=DailyRecapData(
                 off_duty_hours=0.0,
                 sleeper_hours=0.0,
-                driving_hours=OPERATIONAL_DEFAULTS.default_mock_driving_duration_hours,
+                driving_hours=sum(
+                    segment.duration_minutes
+                    for segment in timeline
+                    if segment.status == EventType.DRIVING
+                )
+                / 60,
                 on_duty_not_driving_hours=(
                     OPERATIONAL_DEFAULTS.pickup_duration_minutes
                     + OPERATIONAL_DEFAULTS.dropoff_duration_minutes
                 )
                 / 60,
             ),
-            segments=[
-                DutySegment(
-                    status=EventType.ON_DUTY,
-                    label="Pickup handling",
-                    start_at=start_at,
-                    end_at=pickup_end,
-                    duration_minutes=OPERATIONAL_DEFAULTS.pickup_duration_minutes,
-                    location=payload.pickup_location,
-                ),
-                DutySegment(
-                    status=EventType.DRIVING,
-                    label="Drive toward destination",
-                    start_at=pickup_end,
-                    end_at=drive_end,
-                    duration_minutes=OPERATIONAL_DEFAULTS.default_mock_driving_duration_hours * 60,
-                    location=f"{payload.pickup_location} -> {payload.dropoff_location}",
-                ),
-                DutySegment(
-                    status=EventType.ON_DUTY,
-                    label="Dropoff handling",
-                    start_at=drive_end,
-                    end_at=dropoff_end,
-                    duration_minutes=OPERATIONAL_DEFAULTS.dropoff_duration_minutes,
-                    location=payload.dropoff_location,
-                ),
-            ],
+            segments=timeline,
         )
     ]
 

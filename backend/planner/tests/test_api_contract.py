@@ -44,8 +44,12 @@ def test_trip_plan_returns_stable_contract():
     assert payload["route_stops"][0]["type"] == "origin"
     assert payload["route_stops"][1]["type"] == "pickup"
     assert payload["route_stops"][2]["type"] == "dropoff"
-    assert payload["timeline"][0]["type"] == "on_duty"
-    assert payload["daily_logs"][0]["segments"][1]["status"] == "driving"
+    assert payload["timeline"][0]["type"] == "driving"
+    assert payload["timeline"][0]["label"] == "Drive to pickup"
+    assert payload["timeline"][1]["type"] == "on_duty"
+    assert payload["timeline"][2]["type"] == "driving"
+    assert payload["daily_logs"][0]["segments"][0]["status"] == "driving"
+    assert payload["daily_logs"][0]["segments"][2]["status"] == "driving"
 
 
 def test_trip_plan_rejects_invalid_payload_with_normalized_errors():

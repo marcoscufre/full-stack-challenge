@@ -29,6 +29,18 @@ class RouteLeg:
 
 
 @dataclass(slots=True, frozen=True)
+class RouteOverride:
+    distance_miles: float
+    duration_minutes: int
+
+
+@dataclass(slots=True, frozen=True)
+class MockRouteOverrides:
+    current_to_pickup: RouteOverride | None = None
+    pickup_to_dropoff: RouteOverride | None = None
+
+
+@dataclass(slots=True, frozen=True)
 class RouteSummaryData:
     total_distance_miles: float
     total_duration_hours: float
