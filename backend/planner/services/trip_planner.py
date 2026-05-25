@@ -2,12 +2,8 @@ from datetime import UTC, datetime
 
 from ..constants import PLANNER_ASSUMPTIONS
 from ..domain import (
-    DailyLogData,
-    DailyRecapData,
-    EventType,
     MockRouteOverrides,
     PlannedStop,
-    RouteSummaryData,
     StopType,
     TripPlanData,
 )
@@ -28,7 +24,8 @@ from ..schemas import (
 )
 from .fuel_planner import insert_fuel_stops
 from .daily_logs import build_daily_logs
-from .timeline import calculate_total_timeline_minutes, normalize_timeline
+from .summary import build_trip_summary
+from .timeline import normalize_timeline
 
 
 def build_trip_plan(payload: TripPlanRequest) -> TripPlanResponse:
@@ -55,30 +52,6 @@ def build_trip_plan_data(
         activities=fuel_plan.activities,
     )
     timeline = normalize_timeline(hos_plan.timeline)
-
-    total_driving_hours = sum(
-        segment.duration_minutes
-        for segment in timeline
-        if segment.status == EventType.DRIVING
-    ) / 60
-    total_on_duty_not_driving_hours = sum(
-        segment.duration_minutes
-        for segment in timeline
-        if segment.status == EventType.ON_DUTY
-    ) / 60
-    total_rest_hours = sum(
-        segment.duration_minutes
-        for segment in timeline
-        if segment.status in {EventType.OFF_DUTY, EventType.SLEEPER}
-    ) / 60
-
-    service_dates = {
-        segment.start_at.date().isoformat()
-        for segment in timeline
-    } | {
-        segment.end_at.date().isoformat()
-        for segment in timeline
-    }
 
     route_stops = [
         PlannedStop(
@@ -110,15 +83,6 @@ def build_trip_plan_data(
         ),
     ]
 
-    summary = RouteSummaryData(
-        total_distance_miles=sum(leg.distance_miles for leg in route_legs),
-        total_duration_hours=calculate_total_timeline_minutes(timeline) / 60,
-        total_driving_hours=total_driving_hours,
-        total_on_duty_hours=total_on_duty_not_driving_hours,
-        total_rest_hours=total_rest_hours,
-        estimated_days=max(1, len(service_dates)),
-    )
-
     daily_logs = build_daily_logs(
         timeline,
         remarks=[
@@ -126,6 +90,11 @@ def build_trip_plan_data(
             f"Pickup: {payload.pickup_location}",
             f"Dropoff: {payload.dropoff_location}",
         ],
+    )
+    summary = build_trip_summary(
+        route_legs=route_legs,
+        timeline=timeline,
+        daily_logs=daily_logs,
     )
 
     warnings = [
