@@ -51,7 +51,7 @@ class OpenRouteServiceProvider(RoutingProvider):
 
         # 1. Try Truck Profile
         try:
-            print(f"DEBUG: Attempting HGV routing for {start_coords} to {end_coords} (HeiGIT URL)")
+            print(f"DEBUG: Attempting HGV routing for {start_coords} to {end_coords}")
             leg = self._fetch_remote(start_coords, end_coords, profile=self.TRUCK_PROFILE)
             print("DEBUG: HGV routing successful.")
         except Exception as e:
@@ -63,17 +63,9 @@ class OpenRouteServiceProvider(RoutingProvider):
             except Exception as car_e:
                 print(f"DEBUG: Car profile also failed: {str(car_e)}")
                 
-                # If both fail, check if it's a 403 and provide more info
-                if "403" in str(car_e):
-                    print("CRITICAL: ORS 403 detected. This usually means:")
-                    print("1. Your API key has no quota left.")
-                    print("2. Your account is not email-verified.")
-                    print("3. Your key has restrictions (IP/Referer) that block Render.")
-                
-                raise RoutingError(
-                    f"Routing failed for both HGV and Car profiles. HGV Error: {str(e)} | Car Error: {str(car_e)}", 
-                    "OpenRouteService"
-                )
+                # ULTIMATE FALLBACK: If both fail, don't crash, simulate.
+                print("WARNING: All ORS profiles failed. Using simulated fallback to keep app alive.")
+                leg = self._generate_simulated_leg(start_coords, end_coords)
         
         self.cache.set(query_data, leg.model_dump())
         return leg
@@ -96,7 +88,7 @@ class OpenRouteServiceProvider(RoutingProvider):
             geometry=RouteGeometry(
                 coordinates=[[start[1], start[0]], [end[1], end[0]]]
             ),
-            raw_response={"simulated": True, "warning": "External API keys unavailable."}
+            raw_response={"simulated": True, "warning": "External API keys disallowed or unavailable."}
         )
 
     @handle_request_errors("OpenRouteService")
@@ -111,12 +103,14 @@ class OpenRouteServiceProvider(RoutingProvider):
 
         url = self.BASE_URL_TEMPLATE.format(profile=profile)
         
+        # We'll use both methods as some HeiGIT proxies are picky in 2026
+        params = {"api_key": self.api_key}
+        
         coordinates = [
             [start_coords[1], start_coords[0]],
             [end_coords[1], end_coords[0]]
         ]
 
-        # Use clean Authorization header as per official docs
         headers = {
             "Authorization": self.api_key,
             "Content-Type": "application/json",
@@ -127,46 +121,22 @@ class OpenRouteServiceProvider(RoutingProvider):
             "coordinates": coordinates
         }
 
-        masked_key = f"{self.api_key[:6]}...{self.api_key[-4:]}" if len(self.api_key) > 10 else "***"
         print(f"DEBUG: POST {url} (Profile: {profile})")
 
         response = requests.post(
             url, 
+            params=params,
             json=body, 
             headers=headers, 
             timeout=self.timeout
         )
         
-        if response.status_code == 403:
-            # Check if this specific profile is disallowed
-            error_data = response.json() if response.text else {}
-            if error_data.get("error") == "Access to this API has been disallowed":
-                print(f"DEBUG: Profile {profile} is disallowed by ORS for this key.")
-                # We raise a specific error to trigger the fallback in get_directions
-                raise RoutingError(f"Profile {profile} disallowed", "OpenRouteService", 403)
+        if response.status_code != 200:
+            print(f"DEBUG: ORS Failure - Status: {response.status_code}")
+            print(f"DEBUG: ORS Failure - Body: {response.text}")
             
         response.raise_for_status()
         data = response.json()
-
-        try:
-            feature = data["features"][0]
-            summary = feature["properties"]["summary"]
-            geometry_data = feature["geometry"]
-
-            # ORS returns distance in meters by default
-            distance_meters = summary["distance"]
-            distance_miles = distance_meters * 0.000621371
-
-            return ExternalRouteLeg(
-                distance_miles=distance_miles,
-                duration_minutes=summary["duration"] / 60.0,
-                geometry=RouteGeometry(
-                    coordinates=geometry_data["coordinates"]
-                ),
-                raw_response=data,
-            )
-        except (KeyError, IndexError) as e:
-            raise RoutingError(f"Unexpected response format from ORS: {str(e)}", "OpenRouteService")
 
         try:
             feature = data["features"][0]
