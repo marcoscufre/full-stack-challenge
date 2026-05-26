@@ -42,19 +42,27 @@ class OpenRouteServiceProvider(RoutingProvider):
         if cached_result is not None:
             return ExternalRouteLeg(**cached_result)
 
-        # 1. Try Truck Profile First
+        if not self.api_key:
+            print("OpenRouteService API key is missing. Using simulated fallback.")
+            leg = self._generate_simulated_leg(start_coords, end_coords)
+            self.cache.set(query_data, leg.model_dump())
+            return leg
+
+        # 1. Try Truck Profile
         try:
             leg = self._fetch_remote(start_coords, end_coords, profile=self.TRUCK_PROFILE)
-        except Exception as e:
-            # 2. Try Car Profile Second
+        except RoutingError as e:
+            # If it's a 404/400 from ORS, it likely means no route found.
+            # Don't fallback to car profile or simulation if it's a genuine "no route"
+            if e.status_code and 400 <= e.status_code < 500:
+                raise e
+            
+            # 2. Try Car Profile as secondary (might have different road data)
             print(f"HGV routing failed ({e}), trying car profile.")
             try:
                 leg = self._fetch_remote(start_coords, end_coords, profile=self.CAR_PROFILE)
-            except Exception as car_e:
-                # 3. EMERGENCY FALLBACK: Simulated Routing
-                # This ensures the HOS engine works even if external API keys are blocked/invalid
-                print(f"External routing totally failed ({car_e}). Using simulated fallback.")
-                leg = self._generate_simulated_leg(start_coords, end_coords)
+            except Exception:
+                raise e # Raise original error if both fail
         
         self.cache.set(query_data, leg.model_dump())
         return leg

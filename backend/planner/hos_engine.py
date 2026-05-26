@@ -87,21 +87,11 @@ def simulate_hos_timeline(
     driving_since_break_minutes = 0
     cycle_used_minutes = int(round(current_cycle_used_hours * 60))
 
-    # Allow starting even if cycle is exhausted by inserting a restart immediately
+    # Reject starting if cycle is exhausted
     if cycle_used_minutes >= (HOS_RULES.cycle_limit_hours * 60):
-        current_at = _append_segment(
-            timeline,
-            status=EventType.OFF_DUTY,
-            label="Initial 34-hour restart",
-            start_at=current_at,
-            duration_minutes=HOS_RULES.restart_reset_hours * 60,
-            location=activities[0].location if activities else "Unknown",
-            notes="Cycle limit reached before trip start. Mandatory restart applied.",
+        raise ImpossibleTripError(
+            f"HOS cycle limit was reached ({current_cycle_used_hours}h already used)."
         )
-        shift_start_at = current_at
-        shift_driving_minutes = 0
-        driving_since_break_minutes = 0
-        cycle_used_minutes = 0
 
     for activity in activities:
         remaining_minutes = activity.duration_minutes

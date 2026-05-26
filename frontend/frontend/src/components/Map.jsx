@@ -49,78 +49,93 @@ const Map = ({ center = [-98.5795, 39.8283], zoom = 3, geometry, markers = [] })
     });
 
     // Handle markers and camera movement
-    if (markers.length > 0) {
+    const fitMap = () => {
+      if (!map.current) return;
+      
       const bounds = new maplibregl.LngLatBounds();
-      markers.forEach(marker => {
-        if (marker.lat && marker.lon) {
-          bounds.extend([marker.lon, marker.lat]);
-        }
-      });
+      let hasData = false;
 
-      if (!bounds.isEmpty()) {
-        if (markers.length === 1) {
-          map.current.flyTo({
-            center: [markers[0].lon, markers[0].lat],
-            zoom: 10,
-            essential: true
-          });
-        } else {
-          map.current.fitBounds(bounds, { padding: 80, duration: 2000 });
-        }
+      if (markers.length > 0) {
+        markers.forEach(marker => {
+          if (marker.lat && marker.lon) {
+            bounds.extend([marker.lon, marker.lat]);
+            hasData = true;
+          }
+        });
       }
+
+      if (geometry && geometry.length > 0) {
+        geometry.forEach(c => {
+          bounds.extend([c[1], c[0]]);
+          hasData = true;
+        });
+      }
+
+      if (hasData) {
+        map.current.fitBounds(bounds, { 
+          padding: { top: 50, bottom: 50, left: 50, right: 50 }, 
+          duration: 1000,
+          essential: true
+        });
+        
+        // Secondary check to ensure it fits after container might have resized
+        setTimeout(() => {
+          if (map.current) map.current.resize();
+        }, 500);
+      }
+    };
+
+    if (map.current.loaded()) {
+      fitMap();
+    } else {
+      map.current.once('load', fitMap);
     }
 
-    // Handle geometry (Polyline)
+    // Handle geometry layer updates
     if (geometry && geometry.length > 0) {
-      const source = map.current.getSource('route');
-      if (source) {
-        source.setData({
-          type: 'Feature',
-          properties: {},
-          geometry: {
-            type: 'LineString',
-            coordinates: geometry.map(c => [c[1], c[0]]),
-          },
-        });
-      } else {
-        const handleLoad = () => {
-          if (!map.current.getSource('route')) {
-            map.current.addSource('route', {
-              type: 'geojson',
-              data: {
-                type: 'Feature',
-                properties: {},
-                geometry: {
-                  type: 'LineString',
-                  coordinates: geometry.map(c => [c[1], c[0]]),
-                },
-              },
-            });
-
-            map.current.addLayer({
-              id: 'route',
-              type: 'line',
-              source: 'route',
-              layout: { 'line-join': 'round', 'line-cap': 'round' },
-              paint: {
-                'line-color': '#0058be',
-                'line-width': 5,
-                'line-opacity': 0.75,
-              },
-            });
-          }
-        };
-
-        if (map.current.loaded()) {
-          handleLoad();
+      const updateSource = () => {
+        const source = map.current.getSource('route');
+        if (source) {
+          source.setData({
+            type: 'Feature',
+            properties: {},
+            geometry: {
+              type: 'LineString',
+              coordinates: geometry.map(c => [c[1], c[0]]),
+            },
+          });
         } else {
-          map.current.once('load', handleLoad);
-        }
-      }
+          map.current.addSource('route', {
+            type: 'geojson',
+            data: {
+              type: 'Feature',
+              properties: {},
+              geometry: {
+                type: 'LineString',
+                coordinates: geometry.map(c => [c[1], c[0]]),
+              },
+            },
+          });
 
-      const bounds = new maplibregl.LngLatBounds();
-      geometry.forEach(c => bounds.extend([c[1], c[0]]));
-      map.current.fitBounds(bounds, { padding: 50 });
+          map.current.addLayer({
+            id: 'route',
+            type: 'line',
+            source: 'route',
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+              'line-color': '#0058be',
+              'line-width': 5,
+              'line-opacity': 0.75,
+            },
+          });
+        }
+      };
+
+      if (map.current.loaded()) {
+        updateSource();
+      } else {
+        map.current.once('load', updateSource);
+      }
     }
   }, [geometry, markers]);
 

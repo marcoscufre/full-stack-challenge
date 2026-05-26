@@ -149,15 +149,15 @@ const Dashboard = () => {
             </div>
           </div>
 
-          <div className="flex-grow flex flex-col lg:flex-row gap-6 md:gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
             {/* Map Container */}
-            <div className="flex-[2] relative rounded-2xl border border-outline-variant overflow-hidden shadow-md min-h-[300px] md:min-h-[500px]">
+            <div className="lg:col-span-2 relative rounded-2xl border border-outline-variant overflow-hidden shadow-md h-[400px] md:h-[600px]">
               <Map geometry={route_geometry} markers={route_stops} />
             </div>
 
             {/* Timeline Sidebar - Stacks below on mobile */}
-            <div className="flex-1 bg-white border border-outline-variant rounded-2xl shadow-sm flex flex-col overflow-hidden max-h-[600px] lg:max-h-none shrink-0">
-               <div className="p-4 md:p-6 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
+            <div className="lg:col-span-1 bg-white border border-outline-variant rounded-2xl shadow-sm flex flex-col overflow-hidden h-[400px] md:h-[600px] shrink-0">
+               <div className="p-4 md:p-6 border-b border-outline-variant flex justify-between items-center bg-surface-container-low shrink-0">
                   <h3 className="font-bold text-primary text-sm md:text-base">Trip Timeline</h3>
                   <span className="text-[10px] font-bold bg-secondary/10 text-secondary px-2 py-1 rounded-full uppercase tracking-tighter shrink-0">
                     {summary.estimated_days} Days
