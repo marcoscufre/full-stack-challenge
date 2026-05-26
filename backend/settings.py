@@ -12,8 +12,8 @@ DEBUG = os.getenv("DJANGO_DEBUG", "true").lower() == "true"
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.getenv(
-        "https://trip-planner-api-mrl2.onrender.com",
-        "127.0.0.1,localhost,testserver",
+        "ALLOWED_HOSTS",
+        "127.0.0.1,localhost,testserver,trip-planner-api-mrl2.onrender.com",
     ).split(",")
     if host.strip()
 ]

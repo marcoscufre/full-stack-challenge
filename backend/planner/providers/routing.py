@@ -24,8 +24,8 @@ class OpenRouteServiceProvider(RoutingProvider):
     TRUCK_PROFILE = "driving-hgv"
     CAR_PROFILE = "driving-car"
     
-    # NEW HEIGIT URL STRUCTURE (Deprecated api.openrouteservice.org as of April 2026)
-    BASE_URL_TEMPLATE = "https://api.heigit.org/openrouteservice/v2/directions/{profile}/geojson"
+    # Standard OpenRouteService URL
+    BASE_URL_TEMPLATE = "https://api.openrouteservice.org/v2/directions/{profile}/geojson"
 
     def __init__(self, api_key: str | None = None, timeout: int = 20):
         self.api_key = (api_key or provider_config.openroutes_api_key or "").strip()
@@ -102,9 +102,7 @@ class OpenRouteServiceProvider(RoutingProvider):
         if not self.api_key:
             raise RoutingError("OpenRouteService API key is missing.", "OpenRouteService")
 
-        # Use the NEW HeiGIT URL structure
-        base_url = self.BASE_URL_TEMPLATE.format(profile=profile)
-        url = f"{base_url}?api_key={self.api_key}"
+        url = self.BASE_URL_TEMPLATE.format(profile=profile)
         
         coordinates = [
             [start_coords[1], start_coords[0]],
@@ -112,6 +110,7 @@ class OpenRouteServiceProvider(RoutingProvider):
         ]
 
         headers = {
+            "Authorization": self.api_key,
             "Content-Type": "application/json"
         }
         
@@ -119,7 +118,7 @@ class OpenRouteServiceProvider(RoutingProvider):
             "coordinates": coordinates
         }
 
-        print(f"DEBUG: Requesting ORS {profile} via query param (Key ends in ...{self.api_key[-5:]})")
+        print(f"DEBUG: Requesting ORS {profile} via Authorization header (Key ends in ...{self.api_key[-5:]})")
 
         response = requests.post(
             url, 
