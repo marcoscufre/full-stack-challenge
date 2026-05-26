@@ -109,18 +109,18 @@ class OpenRouteServiceProvider(RoutingProvider):
         if not self.api_key:
             raise RoutingError("OpenRouteService API key is missing.", "OpenRouteService")
 
-        # Switching to query parameter which is often more robust for HeiGIT/ORS
-        base_url = self.BASE_URL_TEMPLATE.format(profile=profile)
-        url = f"{base_url}?api_key={self.api_key}"
+        url = self.BASE_URL_TEMPLATE.format(profile=profile)
         
         coordinates = [
             [start_coords[1], start_coords[0]],
             [end_coords[1], end_coords[0]]
         ]
 
+        # Use clean Authorization header as per official docs
         headers = {
+            "Authorization": self.api_key,
             "Content-Type": "application/json",
-            "Accept": "application/json, application/geo+json, application/gpx+xml, img/png; charset=utf-8"
+            "Accept": "application/json, application/geo+json"
         }
         
         body = {
@@ -128,7 +128,7 @@ class OpenRouteServiceProvider(RoutingProvider):
         }
 
         masked_key = f"{self.api_key[:6]}...{self.api_key[-4:]}" if len(self.api_key) > 10 else "***"
-        print(f"DEBUG: POST {url.split('?')[0]}?api_key=HIDDEN (Profile: {profile})")
+        print(f"DEBUG: POST {url} (Profile: {profile})")
 
         response = requests.post(
             url, 
@@ -137,17 +137,36 @@ class OpenRouteServiceProvider(RoutingProvider):
             timeout=self.timeout
         )
         
-        if response.status_code != 200:
-            print(f"DEBUG: ORS Failure - Status: {response.status_code}")
-            print(f"DEBUG: ORS Failure - Body: {response.text}")
-            
-            # If we get a 403 or 401, let's provide a simulated fallback instead of crashing
-            if response.status_code in [401, 403]:
-                print(f"WARNING: ORS Authentication failed for {profile}. Using simulated fallback to keep app alive.")
-                return self._generate_simulated_leg(start_coords, end_coords)
+        if response.status_code == 403:
+            # Check if this specific profile is disallowed
+            error_data = response.json() if response.text else {}
+            if error_data.get("error") == "Access to this API has been disallowed":
+                print(f"DEBUG: Profile {profile} is disallowed by ORS for this key.")
+                # We raise a specific error to trigger the fallback in get_directions
+                raise RoutingError(f"Profile {profile} disallowed", "OpenRouteService", 403)
             
         response.raise_for_status()
         data = response.json()
+
+        try:
+            feature = data["features"][0]
+            summary = feature["properties"]["summary"]
+            geometry_data = feature["geometry"]
+
+            # ORS returns distance in meters by default
+            distance_meters = summary["distance"]
+            distance_miles = distance_meters * 0.000621371
+
+            return ExternalRouteLeg(
+                distance_miles=distance_miles,
+                duration_minutes=summary["duration"] / 60.0,
+                geometry=RouteGeometry(
+                    coordinates=geometry_data["coordinates"]
+                ),
+                raw_response=data,
+            )
+        except (KeyError, IndexError) as e:
+            raise RoutingError(f"Unexpected response format from ORS: {str(e)}", "OpenRouteService")
 
         try:
             feature = data["features"][0]
