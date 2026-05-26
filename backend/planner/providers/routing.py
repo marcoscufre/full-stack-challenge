@@ -101,27 +101,23 @@ class OpenRouteServiceProvider(RoutingProvider):
         if not self.api_key:
             raise RoutingError("OpenRouteService API key is missing.", "OpenRouteService")
 
-        url = self.BASE_URL_TEMPLATE.format(profile=profile)
+        # Passing api_key as a query parameter is often more robust than headers in cloud proxies
+        url = f"https://api.openrouteservice.org/v2/directions/{profile}/geojson?api_key={self.api_key}"
+        
         coordinates = [
             [start_coords[1], start_coords[0]],
             [end_coords[1], end_coords[0]]
         ]
 
-        # ORS is very picky about the Bearer prefix and headers
-        auth_header = self.api_key
-        if not auth_header.startswith("Bearer "):
-            auth_header = f"Bearer {auth_header}"
-
         headers = {
-            "Authorization": auth_header,
-            "Content-Type": "application/json; charset=utf-8",
-            "Accept": "application/json, application/geo+json; charset=utf-8"
+            "Content-Type": "application/json"
         }
         
-        # Minimal body to avoid 'disallowed' parameters
         body = {
             "coordinates": coordinates
         }
+
+        print(f"DEBUG: Requesting ORS {profile} via query param (Key ends in ...{self.api_key[-5:]})")
 
         response = requests.post(
             url, 
@@ -136,6 +132,26 @@ class OpenRouteServiceProvider(RoutingProvider):
             
         response.raise_for_status()
         data = response.json()
+
+        try:
+            feature = data["features"][0]
+            summary = feature["properties"]["summary"]
+            geometry_data = feature["geometry"]
+
+            # Convert meters to miles
+            distance_meters = summary["distance"]
+            distance_miles = distance_meters * 0.000621371
+
+            return ExternalRouteLeg(
+                distance_miles=distance_miles,
+                duration_minutes=summary["duration"] / 60.0,
+                geometry=RouteGeometry(
+                    coordinates=geometry_data["coordinates"]
+                ),
+                raw_response=data,
+            )
+        except (KeyError, IndexError) as e:
+            raise RoutingError(f"Unexpected response format from ORS: {str(e)}", "OpenRouteService")
 
         try:
             feature = data["features"][0]
