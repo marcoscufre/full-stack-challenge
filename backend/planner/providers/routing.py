@@ -24,8 +24,8 @@ class OpenRouteServiceProvider(RoutingProvider):
     TRUCK_PROFILE = "driving-hgv"
     CAR_PROFILE = "driving-car"
     
-    # Standard OpenRouteService URL
-    BASE_URL_TEMPLATE = "https://api.openrouteservice.org/v2/directions/{profile}/geojson"
+    # NEW 2026 HeiGIT URL STRUCTURE
+    BASE_URL_TEMPLATE = "https://api.heigit.org/openrouteservice/v2/directions/{profile}/geojson"
 
     def __init__(self, api_key: str | None = None, timeout: int = 20):
         self.api_key = (api_key or provider_config.openroutes_api_key or "").strip()
@@ -51,7 +51,7 @@ class OpenRouteServiceProvider(RoutingProvider):
 
         # 1. Try Truck Profile
         try:
-            print(f"DEBUG: Attempting HGV routing for {start_coords} to {end_coords}")
+            print(f"DEBUG: Attempting HGV routing for {start_coords} to {end_coords} (HeiGIT URL)")
             leg = self._fetch_remote(start_coords, end_coords, profile=self.TRUCK_PROFILE)
             print("DEBUG: HGV routing successful.")
         except Exception as e:
@@ -62,7 +62,14 @@ class OpenRouteServiceProvider(RoutingProvider):
                 print("DEBUG: Car profile fallback successful.")
             except Exception as car_e:
                 print(f"DEBUG: Car profile also failed: {str(car_e)}")
-                # If both fail, raise a clear error
+                
+                # If both fail, check if it's a 403 and provide more info
+                if "403" in str(car_e):
+                    print("CRITICAL: ORS 403 detected. This usually means:")
+                    print("1. Your API key has no quota left.")
+                    print("2. Your account is not email-verified.")
+                    print("3. Your key has restrictions (IP/Referer) that block Render.")
+                
                 raise RoutingError(
                     f"Routing failed for both HGV and Car profiles. HGV Error: {str(e)} | Car Error: {str(car_e)}", 
                     "OpenRouteService"
@@ -109,6 +116,7 @@ class OpenRouteServiceProvider(RoutingProvider):
             [end_coords[1], end_coords[0]]
         ]
 
+        # Use the standard header without prefix as per 2026 docs
         headers = {
             "Authorization": self.api_key,
             "Content-Type": "application/json"
@@ -118,7 +126,8 @@ class OpenRouteServiceProvider(RoutingProvider):
             "coordinates": coordinates
         }
 
-        print(f"DEBUG: Requesting ORS {profile} via Authorization header (Key ends in ...{self.api_key[-5:]})")
+        masked_key = f"{self.api_key[:6]}...{self.api_key[-4:]}" if len(self.api_key) > 10 else "***"
+        print(f"DEBUG: POST {url} (Key: {masked_key})")
 
         response = requests.post(
             url, 
@@ -128,8 +137,8 @@ class OpenRouteServiceProvider(RoutingProvider):
         )
         
         if response.status_code != 200:
-            print(f"DEBUG: ORS API Failure Status: {response.status_code}")
-            print(f"DEBUG: ORS API Failure Body: {response.text}")
+            print(f"DEBUG: ORS Failure - Status: {response.status_code}")
+            print(f"DEBUG: ORS Failure - Body: {response.text}")
             
         response.raise_for_status()
         data = response.json()
