@@ -1,12 +1,13 @@
 import requests
 from abc import ABC, abstractmethod
 from typing import Any
+from math import radians, cos, sin, asin, sqrt
 
 from .config import provider_config
 from .models import ExternalRouteLeg, RouteGeometry
 from .errors import handle_request_errors, RoutingError
 from .cache import ProviderCache
-from math import radians, cos, sin, asin, sqrt
+
 
 class RoutingProvider(ABC):
     @abstractmethod
@@ -18,10 +19,17 @@ class RoutingProvider(ABC):
         pass
 
 
-
-
 class OpenRouteServiceProvider(RoutingProvider):
-    # ... (init and other methods remain same)
+    # Base profiles
+    TRUCK_PROFILE = "driving-hgv"
+    CAR_PROFILE = "driving-car"
+    
+    BASE_URL_TEMPLATE = "https://api.openrouteservice.org/v2/directions/{profile}/geojson"
+
+    def __init__(self, api_key: str | None = None, timeout: int = 15):
+        self.api_key = api_key or provider_config.openroutes_api_key
+        self.timeout = timeout
+        self.cache = ProviderCache(prefix="routing")
 
     def get_directions(
         self, 
@@ -53,13 +61,13 @@ class OpenRouteServiceProvider(RoutingProvider):
 
     def _generate_simulated_leg(self, start: tuple[float, float], end: tuple[float, float]) -> ExternalRouteLeg:
         """Calculates distance using Haversine formula and creates a straight-line geometry."""
-        # Calculate distance
         lat1, lon1, lat2, lon2 = map(radians, [start[0], start[1], end[0], end[1]])
         dlon = lon2 - lon1
         dlat = lat2 - lat1
         a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
         c = 2 * asin(sqrt(a))
-        miles = 3956 * c * 1.2 # 1.2 multiplier for road winding factor
+        # 3956 is radius of Earth in miles. 1.2 is winding factor for roads.
+        miles = 3956 * c * 1.2 
         
         duration = (miles / 55) * 60 # Assume 55mph average
         
@@ -69,7 +77,7 @@ class OpenRouteServiceProvider(RoutingProvider):
             geometry=RouteGeometry(
                 coordinates=[[start[1], start[0]], [end[1], end[0]]]
             ),
-            raw_response={"simulated": True, "warning": "External API keys rejected request."}
+            raw_response={"simulated": True, "warning": "External API keys unavailable."}
         )
 
     @handle_request_errors("OpenRouteService")
@@ -96,7 +104,7 @@ class OpenRouteServiceProvider(RoutingProvider):
         body = {
             "coordinates": coordinates,
             "units": "mi",
-            "radiuses": [-1, -1],  # Snap to nearest road regardless of distance
+            "radiuses": [-1, -1],
         }
 
         response = requests.post(
