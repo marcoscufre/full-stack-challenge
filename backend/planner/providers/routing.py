@@ -101,8 +101,9 @@ class OpenRouteServiceProvider(RoutingProvider):
         if not self.api_key:
             raise RoutingError("OpenRouteService API key is missing.", "OpenRouteService")
 
-        # Passing api_key as a query parameter is often more robust than headers in cloud proxies
-        url = f"https://api.openrouteservice.org/v2/directions/{profile}/geojson?api_key={self.api_key}"
+        # Use the NEW HeiGIT URL structure
+        base_url = self.BASE_URL_TEMPLATE.format(profile=profile)
+        url = f"{base_url}?api_key={self.api_key}"
         
         coordinates = [
             [start_coords[1], start_coords[0]],
@@ -172,6 +173,10 @@ class OpenRouteServiceProvider(RoutingProvider):
             )
         except (KeyError, IndexError) as e:
             raise RoutingError(f"Unexpected response format from ORS: {str(e)}", "OpenRouteService")
+
+
+router = OpenRouteServiceProvider()
+     raise RoutingError(f"Unexpected response format from ORS: {str(e)}", "OpenRouteService")
 
 
 router = OpenRouteServiceProvider()
