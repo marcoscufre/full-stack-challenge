@@ -107,15 +107,20 @@ class OpenRouteServiceProvider(RoutingProvider):
             [end_coords[1], end_coords[0]]
         ]
 
+        # ORS is very picky about the Bearer prefix and headers
+        auth_header = self.api_key
+        if not auth_header.startswith("Bearer "):
+            auth_header = f"Bearer {auth_header}"
+
         headers = {
-            "Authorization": self.api_key,
+            "Authorization": auth_header,
             "Content-Type": "application/json; charset=utf-8",
-            "Accept": "application/json, application/geo+json, application/gpx+xml, img/png; charset=utf-8"
+            "Accept": "application/json, application/geo+json; charset=utf-8"
         }
         
+        # Minimal body to avoid 'disallowed' parameters
         body = {
-            "coordinates": coordinates,
-            "units": "mi"
+            "coordinates": coordinates
         }
 
         response = requests.post(
@@ -137,8 +142,12 @@ class OpenRouteServiceProvider(RoutingProvider):
             summary = feature["properties"]["summary"]
             geometry_data = feature["geometry"]
 
+            # ORS returns distance in meters by default if not specified
+            distance_meters = summary["distance"]
+            distance_miles = distance_meters * 0.000621371
+
             return ExternalRouteLeg(
-                distance_miles=summary["distance"],
+                distance_miles=distance_miles,
                 duration_minutes=summary["duration"] / 60.0,
                 geometry=RouteGeometry(
                     coordinates=geometry_data["coordinates"]
