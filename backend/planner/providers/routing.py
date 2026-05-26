@@ -109,7 +109,8 @@ class OpenRouteServiceProvider(RoutingProvider):
 
         headers = {
             "Authorization": self.api_key,
-            "Content-Type": "application/json",
+            "Content-Type": "application/json; charset=utf-8",
+            "Accept": "application/json, application/geo+json, application/gpx+xml, img/png; charset=utf-8"
         }
         
         body = {
@@ -123,6 +124,11 @@ class OpenRouteServiceProvider(RoutingProvider):
             headers=headers, 
             timeout=self.timeout
         )
+        
+        if response.status_code != 200:
+            print(f"DEBUG: ORS API Failure Status: {response.status_code}")
+            print(f"DEBUG: ORS API Failure Body: {response.text}")
+            
         response.raise_for_status()
         data = response.json()
 
