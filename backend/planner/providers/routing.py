@@ -24,7 +24,8 @@ class OpenRouteServiceProvider(RoutingProvider):
     TRUCK_PROFILE = "driving-hgv"
     CAR_PROFILE = "driving-car"
     
-    BASE_URL_TEMPLATE = "https://api.openrouteservice.org/v2/directions/{profile}/geojson"
+    # NEW HEIGIT URL STRUCTURE (Deprecated api.openrouteservice.org as of April 2026)
+    BASE_URL_TEMPLATE = "https://api.heigit.org/openrouteservice/v2/directions/{profile}/geojson"
 
     def __init__(self, api_key: str | None = None, timeout: int = 20):
         self.api_key = (api_key or provider_config.openroutes_api_key or "").strip()
@@ -139,7 +140,7 @@ class OpenRouteServiceProvider(RoutingProvider):
             summary = feature["properties"]["summary"]
             geometry_data = feature["geometry"]
 
-            # Convert meters to miles
+            # ORS returns distance in meters by default
             distance_meters = summary["distance"]
             distance_miles = distance_meters * 0.000621371
 
@@ -153,30 +154,6 @@ class OpenRouteServiceProvider(RoutingProvider):
             )
         except (KeyError, IndexError) as e:
             raise RoutingError(f"Unexpected response format from ORS: {str(e)}", "OpenRouteService")
-
-        try:
-            feature = data["features"][0]
-            summary = feature["properties"]["summary"]
-            geometry_data = feature["geometry"]
-
-            # ORS returns distance in meters by default if not specified
-            distance_meters = summary["distance"]
-            distance_miles = distance_meters * 0.000621371
-
-            return ExternalRouteLeg(
-                distance_miles=distance_miles,
-                duration_minutes=summary["duration"] / 60.0,
-                geometry=RouteGeometry(
-                    coordinates=geometry_data["coordinates"]
-                ),
-                raw_response=data,
-            )
-        except (KeyError, IndexError) as e:
-            raise RoutingError(f"Unexpected response format from ORS: {str(e)}", "OpenRouteService")
-
-
-router = OpenRouteServiceProvider()
-     raise RoutingError(f"Unexpected response format from ORS: {str(e)}", "OpenRouteService")
 
 
 router = OpenRouteServiceProvider()
