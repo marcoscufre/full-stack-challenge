@@ -109,15 +109,13 @@ CACHES = {
         "LOCATION": "unique-snowflake",
     }
 }
-
-CORS_ALLOWED_ORIGINS = [
-    origin.strip()
-    for origin in os.getenv(
-        "CORS_ALLOWED_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173",
-    ).split(",")
-    if origin.strip()
-]
+# origin.strip()
+   # for origin in os.getenv(
+      #  "CORS_ALLOWED_ORIGINS",
+       # "http://localhost:5173,http://127.0.0.1:5173",
+    #).split(",")
+    #if origin.strip()
+CORS_ALLOWED_ORIGINS = True
 
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": [
