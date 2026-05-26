@@ -26,8 +26,8 @@ class OpenRouteServiceProvider(RoutingProvider):
     
     BASE_URL_TEMPLATE = "https://api.openrouteservice.org/v2/directions/{profile}/geojson"
 
-    def __init__(self, api_key: str | None = None, timeout: int = 15):
-        self.api_key = api_key or provider_config.openroutes_api_key
+    def __init__(self, api_key: str | None = None, timeout: int = 20):
+        self.api_key = (api_key or provider_config.openroutes_api_key or "").strip()
         self.timeout = timeout
         self.cache = ProviderCache(prefix="routing")
 
@@ -114,8 +114,7 @@ class OpenRouteServiceProvider(RoutingProvider):
         
         body = {
             "coordinates": coordinates,
-            "units": "mi",
-            "radiuses": [-1, -1],
+            "units": "mi"
         }
 
         response = requests.post(
