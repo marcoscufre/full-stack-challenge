@@ -45,12 +45,15 @@ class OpenRouteServiceProvider(RoutingProvider):
         try:
             leg = self._fetch_remote(start_coords, end_coords, profile=self.TRUCK_PROFILE)
         except Exception as e:
-            # 2. Fallback to Car Profile if Truck fails (often happens in regions with restricted HGV data)
-            print(f"HGV routing failed, falling back to car profile: {e}")
-            leg = self._fetch_remote(start_coords, end_coords, profile=self.CAR_PROFILE)
-            # Add a warning note to raw_response or handle in orchestrator
-            if leg.raw_response:
-                leg.raw_response["routing_warning"] = "Truck-specific routing was unavailable. Fell back to car profile."
+            # 2. Fallback to Car Profile if Truck fails (403 Forbidden or 404 Not Found)
+            # This ensures the application works even if the HGV quota is hit or restricted
+            print(f"HGV routing failed ({e}), falling back to car profile.")
+            try:
+                leg = self._fetch_remote(start_coords, end_coords, profile=self.CAR_PROFILE)
+                if leg.raw_response:
+                    leg.raw_response["routing_warning"] = "Truck-specific routing was unavailable. Fell back to car profile."
+            except Exception as car_e:
+                raise RoutingError(f"Routing failed on all profiles. Primary error: {str(e)}", "OpenRouteService")
         
         self.cache.set(query_data, leg.model_dump())
         return leg
