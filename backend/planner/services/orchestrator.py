@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from ..constants import PLANNER_ASSUMPTIONS
-from ..domain import MockRouteOverrides, PlannedStop, StopType, TripPlanData
+from ..domain import MockRouteOverrides, PlannedStop, RouteLeg, StopType, TripPlanData
 from ..hos_engine import build_default_activities, simulate_hos_timeline
 from ..mock_routes import resolve_mock_route_legs
 from ..schemas import TripPlanRequest, TripPlanResponse
@@ -11,6 +11,11 @@ from .fuel_planner import insert_fuel_stops
 from .summary import build_trip_summary
 from .timeline import normalize_timeline
 from .trip_planner import to_trip_plan_response
+
+
+from ..providers.geocoding import geocoder
+from ..providers.routing import router
+from ..errors import PlannerError, ImpossibleTripError
 
 
 @dataclass(slots=True)
@@ -25,11 +30,52 @@ class PlannerOrchestrator:
         start_at = payload.trip_start_at or datetime.now(UTC)
         start_at = start_at.replace(second=0, microsecond=0)
 
-        route_legs = resolve_mock_route_legs(payload, overrides=route_overrides)
+        # 1. Geocoding
+        current_geo = geocoder.geocode(payload.current_location)
+        pickup_geo = geocoder.geocode(payload.pickup_location)
+        dropoff_geo = geocoder.geocode(payload.dropoff_location)
+
+        if not (current_geo and pickup_geo and dropoff_geo):
+            missing = []
+            if not current_geo: missing.append(f"current: {payload.current_location}")
+            if not pickup_geo: missing.append(f"pickup: {payload.pickup_location}")
+            if not dropoff_geo: missing.append(f"dropoff: {payload.dropoff_location}")
+            raise PlannerError(f"Could not resolve location(s): {', '.join(missing)}")
+
+        cur, pic, dro = current_geo[0], pickup_geo[0], dropoff_geo[0]
+
+        # 2. Routing
+        try:
+            leg1_ext = router.get_directions((cur.lat, cur.lon), (pic.lat, pic.lon))
+            leg2_ext = router.get_directions((pic.lat, pic.lon), (dro.lat, dro.lon))
+        except Exception as e:
+            raise PlannerError(f"Routing failed: {str(e)}")
+
+        route_legs = [
+            RouteLeg(
+                name="current_to_pickup",
+                origin_label=cur.display_name,
+                destination_label=pic.display_name,
+                distance_miles=leg1_ext.distance_miles,
+                duration_minutes=int(leg1_ext.duration_minutes),
+                geometry_coords=leg1_ext.geometry.coordinates if leg1_ext.geometry else None,
+            ),
+            RouteLeg(
+                name="pickup_to_dropoff",
+                origin_label=pic.display_name,
+                destination_label=dro.display_name,
+                distance_miles=leg2_ext.distance_miles,
+                duration_minutes=int(leg2_ext.duration_minutes),
+                geometry_coords=leg2_ext.geometry.coordinates if leg2_ext.geometry else None,
+            ),
+        ]
+
         base_activities = build_default_activities(
             route_legs,
-            pickup_location=payload.pickup_location,
-            dropoff_location=payload.dropoff_location,
+            pickup_location=pic.display_name,
+            dropoff_location=dro.display_name,
+            pickup_coords=(pic.lat, pic.lon),
+            dropoff_coords=(dro.lat, dro.lon),
         )
         fuel_plan = insert_fuel_stops(base_activities)
         hos_plan = simulate_hos_timeline(
@@ -43,14 +89,18 @@ class PlannerOrchestrator:
             PlannedStop(
                 type=StopType.ORIGIN,
                 label="Current location",
-                location=payload.current_location,
+                location=cur.display_name,
                 sequence=1,
+                lat=cur.lat,
+                lon=cur.lon,
             ),
             PlannedStop(
                 type=StopType.PICKUP,
                 label="Pickup location",
-                location=payload.pickup_location,
+                location=pic.display_name,
                 sequence=2,
+                lat=pic.lat,
+                lon=pic.lon,
             ),
             *[
                 PlannedStop(
@@ -64,8 +114,10 @@ class PlannerOrchestrator:
             PlannedStop(
                 type=StopType.DROPOFF,
                 label="Dropoff location",
-                location=payload.dropoff_location,
+                location=dro.display_name,
                 sequence=3 + len(fuel_plan.fuel_stops),
+                lat=dro.lat,
+                lon=dro.lon,
             ),
         ]
 

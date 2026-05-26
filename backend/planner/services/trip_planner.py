@@ -18,6 +18,13 @@ def to_trip_plan_response(
     payload: TripPlanRequest,
     trip_data: TripPlanData,
 ) -> TripPlanResponse:
+    all_coords = []
+    for leg in trip_data.route_legs:
+        if leg.geometry_coords:
+            # ORS gives [lon, lat], swapping to [lat, lon] for Leaflet/Frontend
+            for coord in leg.geometry_coords:
+                all_coords.append((coord[1], coord[0]))
+
     return TripPlanResponse(
         request=payload,
         assumptions=trip_data.assumptions,
@@ -35,6 +42,8 @@ def to_trip_plan_response(
                 label=stop.label,
                 location=stop.location,
                 sequence=stop.sequence,
+                lat=stop.lat,
+                lon=stop.lon,
             )
             for stop in trip_data.route_stops
         ],
@@ -47,6 +56,8 @@ def to_trip_plan_response(
                 duration_minutes=segment.duration_minutes,
                 location=segment.location,
                 notes=segment.notes,
+                lat=segment.lat,
+                lon=segment.lon,
             )
             for segment in trip_data.timeline
         ],
@@ -104,4 +115,5 @@ def to_trip_plan_response(
             for log in trip_data.daily_logs
         ],
         warnings=trip_data.warnings,
+        route_geometry=all_coords,
     )

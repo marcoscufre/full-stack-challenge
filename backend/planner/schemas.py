@@ -58,6 +58,8 @@ class TimelineEvent(BaseModel):
     duration_minutes: int = Field(ge=0)
     location: str = Field(min_length=1, max_length=255)
     notes: str | None = Field(default=None, max_length=500)
+    lat: float | None = None
+    lon: float | None = None
 
 
 class RouteStop(BaseModel):
@@ -67,6 +69,8 @@ class RouteStop(BaseModel):
     label: str = Field(min_length=1, max_length=120)
     location: str = Field(min_length=1, max_length=255)
     sequence: int = Field(ge=1)
+    lat: float | None = None
+    lon: float | None = None
 
 
 class DailyLogSegment(BaseModel):
@@ -143,6 +147,7 @@ class TripPlanResponse(BaseModel):
     timeline: list[TimelineEvent]
     daily_logs: list[DailyLogSheet]
     warnings: list[str]
+    route_geometry: list[tuple[float, float]] = Field(default_factory=list)
 
 
 class ValidationIssue(BaseModel):

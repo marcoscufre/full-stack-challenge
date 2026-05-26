@@ -26,6 +26,7 @@ class RouteLeg:
     destination_label: str
     distance_miles: float
     duration_minutes: int
+    geometry_coords: list[tuple[float, float]] | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -56,6 +57,8 @@ class PlannedStop:
     label: str
     location: str
     sequence: int
+    lat: float | None = None
+    lon: float | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -67,6 +70,8 @@ class DutySegment:
     duration_minutes: int
     location: str
     notes: str | None = None
+    lat: float | None = None
+    lon: float | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -78,6 +83,8 @@ class PlannedActivity:
     distance_miles: float = 0.0
     source_leg_name: str | None = None
     notes: str | None = None
+    lat: float | None = None
+    lon: float | None = None
 
 
 @dataclass(slots=True, frozen=True)

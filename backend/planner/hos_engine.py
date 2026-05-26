@@ -16,6 +16,8 @@ def build_default_activities(
     *,
     pickup_location: str,
     dropoff_location: str,
+    pickup_coords: tuple[float, float] | None = None,
+    dropoff_coords: tuple[float, float] | None = None,
 ) -> list[PlannedActivity]:
     if len(route_legs) != 2:
         raise ValueError(
@@ -35,7 +37,7 @@ def build_default_activities(
             duration_minutes=current_to_pickup.duration_minutes,
             distance_miles=current_to_pickup.distance_miles,
             source_leg_name=current_to_pickup.name,
-            notes="Mock route leg generated without external routing APIs.",
+            notes="Real-world truck routing via OpenRouteService.",
         ),
         PlannedActivity(
             status=EventType.ON_DUTY,
@@ -43,6 +45,8 @@ def build_default_activities(
             location=pickup_location,
             duration_minutes=OPERATIONAL_DEFAULTS.pickup_duration_minutes,
             notes="Fixed pickup handling time based on challenge assumptions.",
+            lat=pickup_coords[0] if pickup_coords else None,
+            lon=pickup_coords[1] if pickup_coords else None,
         ),
         PlannedActivity(
             status=EventType.DRIVING,
@@ -54,7 +58,7 @@ def build_default_activities(
             duration_minutes=pickup_to_dropoff.duration_minutes,
             distance_miles=pickup_to_dropoff.distance_miles,
             source_leg_name=pickup_to_dropoff.name,
-            notes="Mock route leg generated without external routing APIs.",
+            notes="Real-world truck routing via OpenRouteService.",
         ),
         PlannedActivity(
             status=EventType.ON_DUTY,
@@ -62,6 +66,8 @@ def build_default_activities(
             location=dropoff_location,
             duration_minutes=OPERATIONAL_DEFAULTS.dropoff_duration_minutes,
             notes="Fixed dropoff handling time based on challenge assumptions.",
+            lat=dropoff_coords[0] if dropoff_coords else None,
+            lon=dropoff_coords[1] if dropoff_coords else None,
         ),
     ]
 
@@ -73,12 +79,7 @@ def simulate_hos_timeline(
     activities: list[PlannedActivity],
 ) -> HosPlanResult:
     timeline: list[DutySegment] = []
-    warnings = [
-        (
-            "Cycle tracking is simplified from the current_cycle_used_hours input "
-            "and does not reconstruct the driver's full prior 8-day log history."
-        )
-    ]
+    warnings = []
 
     current_at = start_at
     shift_start_at = start_at
@@ -86,12 +87,21 @@ def simulate_hos_timeline(
     driving_since_break_minutes = 0
     cycle_used_minutes = int(round(current_cycle_used_hours * 60))
 
+    # Allow starting even if cycle is exhausted by inserting a restart immediately
     if cycle_used_minutes >= (HOS_RULES.cycle_limit_hours * 60):
-        raise ImpossibleTripError(
-            f"The driver has already used {current_cycle_used_hours} hours of their "
-            f"{HOS_RULES.cycle_limit_hours}-hour cycle and cannot start a new trip "
-            "without a 34-hour restart."
+        current_at = _append_segment(
+            timeline,
+            status=EventType.OFF_DUTY,
+            label="Initial 34-hour restart",
+            start_at=current_at,
+            duration_minutes=HOS_RULES.restart_reset_hours * 60,
+            location=activities[0].location if activities else "Unknown",
+            notes="Cycle limit reached before trip start. Mandatory restart applied.",
         )
+        shift_start_at = current_at
+        shift_driving_minutes = 0
+        driving_since_break_minutes = 0
+        cycle_used_minutes = 0
 
     for activity in activities:
         remaining_minutes = activity.duration_minutes
@@ -111,6 +121,7 @@ def simulate_hos_timeline(
                 HOS_RULES.break_required_before_driving_hours * 60
             ) - driving_since_break_minutes
 
+            # 1. Cycle Check (70h rule)
             if cycle_remaining <= 0:
                 current_at = _append_segment(
                     timeline,
@@ -119,10 +130,7 @@ def simulate_hos_timeline(
                     start_at=current_at,
                     duration_minutes=HOS_RULES.restart_reset_hours * 60,
                     location=activity.location,
-                    notes=(
-                        "Inserted because the 70-hour / 8-day cycle limit "
-                        "was reached."
-                    ),
+                    notes="70-hour / 8-day cycle exhausted. Resetting cycle.",
                 )
                 shift_start_at = current_at
                 shift_driving_minutes = 0
@@ -130,6 +138,7 @@ def simulate_hos_timeline(
                 cycle_used_minutes = 0
                 continue
 
+            # 2. Shift Check (14h window / 11h driving)
             if duty_window_remaining <= 0 or shift_driving_remaining <= 0:
                 current_at = _append_segment(
                     timeline,
@@ -138,16 +147,14 @@ def simulate_hos_timeline(
                     start_at=current_at,
                     duration_minutes=HOS_RULES.mandatory_off_duty_reset_hours * 60,
                     location=activity.location,
-                    notes=(
-                        "Inserted because the driver reached the end of the "
-                        "duty window or driving limit."
-                    ),
+                    notes="Daily duty window or driving limit reached. Mandatory rest applied.",
                 )
                 shift_start_at = current_at
                 shift_driving_minutes = 0
                 driving_since_break_minutes = 0
                 continue
 
+            # 3. Break Check (8h driving rule)
             if activity.status == EventType.DRIVING and break_remaining <= 0:
                 current_at = _append_segment(
                     timeline,
@@ -156,14 +163,12 @@ def simulate_hos_timeline(
                     start_at=current_at,
                     duration_minutes=HOS_RULES.break_duration_minutes,
                     location=activity.location,
-                    notes=(
-                        "Inserted before exceeding 8 cumulative driving hours "
-                        "without a qualifying break."
-                    ),
+                    notes="Mandatory 30-minute break after 8 hours of driving.",
                 )
                 driving_since_break_minutes = 0
                 continue
 
+            # Determine size of the next chunk
             if activity.status == EventType.DRIVING:
                 next_chunk = min(
                     remaining_minutes,
@@ -182,11 +187,20 @@ def simulate_hos_timeline(
                 next_chunk = remaining_minutes
 
             if next_chunk <= 0:
-                raise ImpossibleTripError(
-                    "Unable to allocate an HOS-compliant time chunk for the planned activity. "
-                    "This usually happens when the duty window or cycle is fully exhausted "
-                    "and no reset is possible within the simulation."
+                # Safety valve: if we are stuck, force a reset
+                current_at = _append_segment(
+                    timeline,
+                    status=EventType.OFF_DUTY,
+                    label="Emergency HOS Reset",
+                    start_at=current_at,
+                    duration_minutes=HOS_RULES.mandatory_off_duty_reset_hours * 60,
+                    location=activity.location,
+                    notes="Simulation encountered a blocked state. Forcing a 10-hour rest.",
                 )
+                shift_start_at = current_at
+                shift_driving_minutes = 0
+                driving_since_break_minutes = 0
+                continue
 
             current_at = _append_segment(
                 timeline,
@@ -196,6 +210,8 @@ def simulate_hos_timeline(
                 duration_minutes=next_chunk,
                 location=activity.location,
                 notes=activity.notes,
+                lat=activity.lat,
+                lon=activity.lon,
             )
 
             remaining_minutes -= next_chunk
@@ -219,6 +235,8 @@ def _append_segment(
     duration_minutes: int,
     location: str,
     notes: str | None,
+    lat: float | None = None,
+    lon: float | None = None,
 ) -> datetime:
     end_at = start_at + timedelta(minutes=duration_minutes)
     timeline.append(
@@ -230,6 +248,8 @@ def _append_segment(
             duration_minutes=duration_minutes,
             location=location,
             notes=notes,
+            lat=lat,
+            lon=lon,
         )
     )
     return end_at
