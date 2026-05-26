@@ -51,18 +51,16 @@ class OpenRouteServiceProvider(RoutingProvider):
         # 1. Try Truck Profile
         try:
             leg = self._fetch_remote(start_coords, end_coords, profile=self.TRUCK_PROFILE)
-        except RoutingError as e:
-            # If it's a 404/400 from ORS, it likely means no route found.
-            # Don't fallback to car profile or simulation if it's a genuine "no route"
-            if e.status_code and 400 <= e.status_code < 500:
-                raise e
-            
-            # 2. Try Car Profile as secondary (might have different road data)
+        except Exception as e:
+            # 2. Try Car Profile as secondary (might have different road data or points closer to roads)
             print(f"HGV routing failed ({e}), trying car profile.")
             try:
                 leg = self._fetch_remote(start_coords, end_coords, profile=self.CAR_PROFILE)
             except Exception:
-                raise e # Raise original error if both fail
+                # If both fail, we re-raise the original error or a specialized one
+                if isinstance(e, RoutingError):
+                    raise e
+                raise RoutingError(f"Routing failed for both HGV and Car profiles: {str(e)}", "OpenRouteService")
         
         self.cache.set(query_data, leg.model_dump())
         return leg
