@@ -50,17 +50,22 @@ class OpenRouteServiceProvider(RoutingProvider):
 
         # 1. Try Truck Profile
         try:
+            print(f"DEBUG: Attempting HGV routing for {start_coords} to {end_coords}")
             leg = self._fetch_remote(start_coords, end_coords, profile=self.TRUCK_PROFILE)
+            print("DEBUG: HGV routing successful.")
         except Exception as e:
-            # 2. Try Car Profile as secondary (might have different road data or points closer to roads)
-            print(f"HGV routing failed ({e}), trying car profile.")
+            # 2. Try Car Profile as secondary
+            print(f"DEBUG: HGV routing failed: {str(e)}. Attempting Car profile fallback...")
             try:
                 leg = self._fetch_remote(start_coords, end_coords, profile=self.CAR_PROFILE)
-            except Exception:
-                # If both fail, we re-raise the original error or a specialized one
-                if isinstance(e, RoutingError):
-                    raise e
-                raise RoutingError(f"Routing failed for both HGV and Car profiles: {str(e)}", "OpenRouteService")
+                print("DEBUG: Car profile fallback successful.")
+            except Exception as car_e:
+                print(f"DEBUG: Car profile also failed: {str(car_e)}")
+                # If both fail, raise a clear error
+                raise RoutingError(
+                    f"Routing failed for both HGV and Car profiles. HGV Error: {str(e)} | Car Error: {str(car_e)}", 
+                    "OpenRouteService"
+                )
         
         self.cache.set(query_data, leg.model_dump())
         return leg
