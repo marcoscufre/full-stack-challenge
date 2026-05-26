@@ -52,16 +52,24 @@ class LocationIQProvider(GeocodingProvider):
             "limit": 5,
         }
 
-        response = requests.get(
-            self.BASE_URL, 
-            params=params, 
-            timeout=self.timeout
-        )
-        
-        if response.status_code == 404:
-            return []
+        # Handle strict 2 req/sec limit with a simple retry
+        for attempt in range(2):
+            response = requests.get(
+                self.BASE_URL, 
+                params=params, 
+                timeout=self.timeout
+            )
             
-        response.raise_for_status()
+            if response.status_code == 429 and attempt == 0:
+                time.sleep(0.6) # Wait for the 2 req/sec window to clear
+                continue
+                
+            if response.status_code == 404:
+                return []
+                
+            response.raise_for_status()
+            break
+            
         data = response.json()
 
         results = []
