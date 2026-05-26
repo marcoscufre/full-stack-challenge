@@ -12,8 +12,8 @@ DEBUG = os.getenv("DJANGO_DEBUG", "true").lower() == "true"
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.getenv(
-        "ALLOWED_HOSTS",
-        "127.0.0.1,localhost,testserver,trip-planner-api-mrl2.onrender.com",
+        "tri-planner-api.onrender.com",
+        "127.0.0.1,localhost,testserver",
     ).split(",")
     if host.strip()
 ]
@@ -109,7 +109,8 @@ CACHES = {
         "LOCATION": "unique-snowflake",
     }
 }
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = os.getenv(
+"CORS_ALLOW_ALL_ORIGINS", "true").lower() == "true"
 
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": [
